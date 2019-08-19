@@ -1,7 +1,7 @@
 # Fulcrum UI
 Temporary placeholder for partial Fulcrum UI repo
 
-## Build
+## Install
 ```
 yarn install
 ```
@@ -10,4 +10,10 @@ yarn install
 ```
 cd packages/fulcrum
 yarn start-mainnet
+```
+
+## Build
+```
+cd packages/fulcrum
+yarn build-mainnet
 ```
