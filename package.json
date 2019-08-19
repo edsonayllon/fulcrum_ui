@@ -1,0 +1,15 @@
+{
+  "name": "root",
+  "private": true,
+  "license": "Apache-2.0",
+  "workspaces": [
+    "packages/*"
+  ],
+  "devDependencies": {
+    "cross-env": "^5.2.0",
+    "lerna": "^3.14.1"
+  },
+  "scripts": {
+    "clean-all": "rm -rf ./packages/**/node_modules ./node_modules"
+  }
+}

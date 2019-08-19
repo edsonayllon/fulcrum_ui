@@ -1,0 +1,13 @@
+/node_modules
+/**/node_modules
+/**/build/
+/**/ignore/
+*.log
+secrets.js
+*.secret.js
+*.test.json
+.DS_Store
+.vscode
+.next
+.idea
+package-lock.json

@@ -1,2 +1,2 @@
 # fulcrum_ui
-Temporary placeholder repo for Fulcrum UI
+Temporary placeholder for partial Fulcrum UI repo

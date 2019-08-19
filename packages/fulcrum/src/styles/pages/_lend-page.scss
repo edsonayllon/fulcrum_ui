@@ -1,0 +1,15 @@
+.lend-page {
+  display: flex;
+  flex-direction: column;
+  align-content: center;
+  justify-content: flex-start;
+
+  height: 100%;
+  width: 100%;
+  max-width: $page-max-width;
+  padding: $page-padding;
+
+  .lend-page-main {
+    margin-top: 5rem;
+  }
+}

@@ -1,0 +1,50 @@
+.collapsible-container {
+  color: #a9b5c7;
+
+  input[type="checkbox"] {
+    display: none;
+  }
+}
+
+.collapsible-container--margin-top {
+  margin-top: 1.5rem;
+}
+
+.collapsible-container__toggle-label {
+  cursor: pointer;
+  display: block;
+  padding: 0 0 0.5rem 0;
+
+  text-align: right;
+  text-decoration: underline dotted;
+  line-height: 2;
+  font-size: 0.75rem;
+
+  //transition: all 0.25s ease-out;
+
+  &.collapsible-container__toggle-label--transparent {
+    margin-top: -1.5625rem;
+    //position: relative;
+    //transform: translateY(-100%);
+    //padding-bottom: 0;
+    //background-color: rgba(255, 255, 255, 0);
+  }
+}
+
+.collapsible-container__content {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.25s ease-in-out;
+
+  .collapsible-container__content-inner {
+    background: #0000001a;
+    border: 1px solid rgba(32, 31, 35, 0.3);
+    padding: 0.8125rem 1rem 0.9375rem;
+    font-size: 0.75rem;
+    line-height: 1.33;
+  }
+}
+
+.collapsible-container__toggle-cb:checked + .collapsible-container__toggle-label + .collapsible-container__content {
+  max-height: 32rem;
+}
