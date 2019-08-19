@@ -65,11 +65,6 @@ export class AppRouter extends Component<any, IAppRouterState> {
             selectedProviderType={this.state.selectedProviderType}
             providerTypes={[
               ProviderType.MetaMask,
-              ProviderType.Fortmatic,
-              ProviderType.Portis,
-              ProviderType.Bitski,
-              ProviderType.Squarelink,
-              // ProviderType.WalletConnect,
               ProviderType.None
             ]}
             onSelect={this.onProviderTypeSelect}
