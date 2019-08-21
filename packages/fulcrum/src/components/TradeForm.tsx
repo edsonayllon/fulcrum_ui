@@ -22,6 +22,48 @@ import { CollateralTokenSelector } from "./CollateralTokenSelector";
 import { PositionTypeMarkerAlt } from "./PositionTypeMarkerAlt";
 import { TradeExpectedResult } from "./TradeExpectedResult";
 import { UnitOfAccountSelector } from "./UnitOfAccountSelector";
+import {
+    orderHashUtils,
+    signatureUtils,
+    Web3ProviderEngine,
+    assetDataUtils,
+    ContractWrappers,
+} from '0x.js';
+import { Web3Wrapper } from '@0x/web3-wrapper';
+import { SignerSubprovider } from '@0x/subproviders';
+
+declare let window: any;
+
+// Provider documentation found at https://0x.org/wiki#Web3-Provider-Examples
+const providerEngine = new Web3ProviderEngine(); // if none provided, should look for injected provider via browser
+providerEngine.addProvider(new SignerSubprovider(window.web3.currentProvider)); //replace with Fulcrum's user chosen provider at a later point
+providerEngine.start();
+
+const NETWORK_ID = process.env.REACT_APP_ETH_NETWORK === "mainnet" ? 1 :
+                   process.env.REACT_APP_ETH_NETWORK === "kovan" ? 42 : 3 // is network mainnet, kovan or ropsten
+
+const contractWrappers = new ContractWrappers(providerEngine, { networkId: NETWORK_ID }); // ID of 1 for mainnet, 42 for Kovan
+
+const fulcrumAddress: string = "0xf6FEcD318228f018Ac5d50E2b7E05c60267Bd4Cd".toLowerCase(); // replace with Fulcrum address
+const feeAddress: string = "0xa258b39954cef5cb142fd567a46cddb31a670124".toLowerCase();
+
+interface ZRXOrderItem {
+  baseTokenAddress: string
+  blockNumber: number
+  feeRecipientAddress: string
+  filledBaseTokenAmount: string
+  filledQuoteTokenAmount: string
+  makerAddress: string
+  makerFeePaid: string
+  orderHash: string
+  outlier: boolean
+  quoteTokenAddress: string
+  takerAddress: string
+  takerFeePaid: string
+  timestamp: number
+  transactionHash: string
+  type: string
+}
 
 interface IInputAmountLimited {
   inputAmountValue: BigNumber;
@@ -442,7 +484,7 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
                   </span>
                 </div>
               ) : (
-                <div className="trade-form__label">{amountMsg}</div>  
+                <div className="trade-form__label">{amountMsg}</div>
               )}
 
             </div>
@@ -532,7 +574,7 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
     if (key.erc20Address === "") {
       version = 1;
     }
-    
+
     this.props.onTrade(
       new TradeRequest(
         this.props.tradeType,

@@ -15,6 +15,7 @@
   },
   "main": "src/index.jsx",
   "dependencies": {
+    "0x.js": "^6.0.15",
     "@0x/base-contract": "^5.0.5",
     "@0x/utils": "^4.3.1",
     "@alch/alchemy-web3": "0.0.5-bzx",
