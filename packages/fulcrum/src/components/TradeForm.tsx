@@ -943,8 +943,8 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
 
         if (available < remaining) {
           // if amount is greater than current existing sell order
-          setTimeout(()=>{}, 501); // each browser can only send 2 requests per second in Radar Relay API
           this.pushRadarRelayOrder(available, liquidity[cycle].filledQuoteTokenAmount, accounts[0], liquidity[cycle].makerAddress, liquidity[cycle].feeRecipientAddress,  zrxTradeType)
+          setTimeout(()=>{}, 501); // each browser can only send 2 requests per second in Radar Relay API
 
           // decrease remaining balance by current sell order amount
           remaining = remaining - available;
