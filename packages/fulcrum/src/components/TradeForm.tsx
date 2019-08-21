@@ -932,6 +932,8 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
       var remaining = parseFloat(this.state.inputAmountText);
       let cycle = 0;
 
+      // pushes orders until requested amount is filled, or liquidity run out
+      // if liquidity runs out, fulcrum becomes the taker
       while (remaining > 0) {
         // get sell amount for cheapest order
         let available = liquidity[cycle].filledBaseTokenAmount;
