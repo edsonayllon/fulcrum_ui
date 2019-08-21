@@ -42,10 +42,10 @@ providerEngine.start();
 const NETWORK_ID = process.env.REACT_APP_ETH_NETWORK === "mainnet" ? 1 :
                    process.env.REACT_APP_ETH_NETWORK === "kovan" ? 42 : 3 // is network mainnet, kovan or ropsten
 
-const contractWrappers = new ContractWrappers(providerEngine, { networkId: NETWORK_ID }); // ID of 1 for mainnet, 42 for Kovan
+const contractWrappers = new ContractWrappers(providerEngine, { networkId: NETWORK_ID });
 
+// addresses used in orders must be lowercase
 const fulcrumAddress: string = "0xf6FEcD318228f018Ac5d50E2b7E05c60267Bd4Cd".toLowerCase(); // replace with Fulcrum address
-const feeAddress: string = "0xa258b39954cef5cb142fd567a46cddb31a670124".toLowerCase();
 
 interface ZRXOrderItem {
   baseTokenAddress: string
@@ -597,6 +597,13 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
   public onSubmitClick = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
+    if (
+      this.props.asset === "ZRX" && this.state.collateral === "ETH" ||
+      this.props.asset === "ETH" && this.state.collateral === "ZRX"
+    ) {
+      this.radarZrxSubmit()
+    }
+
     if (this.state.tradeAmountValue.isZero()) {
       if (this._input) {
         this._input.focus();
@@ -792,4 +799,169 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
       maxTradeValue
     };
   };
+
+
+  // starts Radar Relay order methods
+
+  private pushRadarRelayOrder = async (
+    makerBuyingQuantity: number | string,
+    makerSellingQuanity: number | string,
+    maker: string,
+    taker: string,
+    feeAddr: string,
+    type: string
+  ): Promise<void> => {
+    try {
+      // format buying and selling amounts
+      // All token amounts are sent in amounts of the smallest level of precision (base units).
+      // (e.g if a token has 18 decimal places, selling 1 token would show up as selling '1000000000000000000' units by this API).
+      let DECIMALS = 18;
+      const makerAssetAmount = Web3Wrapper.toBaseUnitAmount(new BigNumber(makerSellingQuanity), DECIMALS); // amount of token we sell
+      const takerAssetAmount = Web3Wrapper.toBaseUnitAmount(new BigNumber(makerBuyingQuantity), DECIMALS); // amount of token we buy
+
+
+      let wethTokenAddr = `0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2`;
+      let zrxTokenAddr = `0xe41d2489571d322189246dafa5ebde1f4699f498`;
+
+      var takerWETHDepositTxHash;
+      var makerToken: string;
+      var takerToken: string;
+      var takerWETHDepositTxHash;
+
+
+      if (type === "BUY") {
+        makerToken = wethTokenAddr; // maker is selling WETH for ZRX
+        takerToken = zrxTokenAddr; // taker is selling ZRX for WETH
+
+        // Convert ETH into WETH for maker
+        takerWETHDepositTxHash  = await contractWrappers.etherToken.depositAsync(
+          wethTokenAddr,
+          makerAssetAmount,
+          maker,
+        );
+      } else {
+        makerToken = zrxTokenAddr; // maker is selling ZRX for WETH
+        takerToken = wethTokenAddr; // taker is selling WETH for ZRX
+
+        // Convert ETH into WETH for taker
+        takerWETHDepositTxHash = await contractWrappers.etherToken.depositAsync(
+          wethTokenAddr,
+          takerAssetAmount,
+          taker,
+        );
+      }
+
+      // Allow the 0x ERC20 Proxy to move ZRX on behalf of makerAccount
+      const makerApprovalTxHash = await contractWrappers.erc20Token.setUnlimitedProxyAllowanceAsync(
+          makerToken,
+          maker,
+      );
+
+      // Allow the 0x ERC20 Proxy to move WETH on behalf of takerAccount
+      const takerApprovalTxHash = await contractWrappers.erc20Token.setUnlimitedProxyAllowanceAsync(
+          takerToken,
+          taker,
+      );
+
+      const makerAssetData = assetDataUtils.encodeERC20AssetData(makerToken);
+      const takerAssetData = assetDataUtils.encodeERC20AssetData(takerToken);
+
+      // ready order, unsigned. Set type to any to bypass bug where getOrderHashHex() wants a full signedOrder object
+      let order: any = {
+          exchangeAddress: zrxTokenAddr,
+          expirationTimeSeconds: Math.trunc((Date.now() + 1000*60*60*24*7)/1000), // timestamp for expiration in seconds, here set to 1 week
+          senderAddress: maker, // addresses must be sent in lowercase
+          makerFee: 0,
+          makerAddress: maker,
+          makerAssetAmount: makerAssetAmount,
+          takerFee: 0,
+          takerAddress: taker,
+          takerAssetAmount: takerAssetAmount,
+          salt: Date.now(),
+          feeRecipientAddress: feeAddr, // fee address is address of relayer
+          makerAssetData: makerAssetData, // The token address the Maker is offering
+          takerAssetData: takerAssetData, // The token address the Maker is requesting from the Taker.
+      };
+
+      // use orderHashUtils to ready for a signature, where the order object becomes complete with the signature
+      const orderHashHex = orderHashUtils.getOrderHashHex(order);
+
+      // signature is required to confirm the sender owns the private key to the maker public address
+      // API throws error if incorrect signature is provided
+      const signature = await signatureUtils.ecSignHashAsync(providerEngine, orderHashHex, maker);
+
+      // append signature to order object
+      const signedOrder = { ...order, signature };
+
+      // Submit order
+      let res = await fetch(`https://api.radarrelay.com/v2/orders`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        redirect: 'follow',
+        referrer: 'no-referrer',
+        body: JSON.stringify(signedOrder),
+      });
+      console.log(await res.json)
+    } catch (err) {
+      console.log(err)
+    }
+  }
+
+  private radarZrxSubmit = async (): Promise<void> => {
+    try {
+      // is user buying ZRX with ETH or selling ZRX for ETH?
+      const zrxTradeType = this.props.asset === "ZRX" && this.state.collateral === "ETH" ? 'BUY' : 'SELL';
+      // are the takers selling ZRX or Buying ZRX?
+      const zrxTakerType = this.props.asset === "ZRX" && this.state.collateral === "ETH" ? 'SELL' : 'BUY';
+
+      // get user's public key, assumes metamask for now
+      const accounts = await window.ethereum.enable();
+      let maker = accounts[0];
+
+      // GET's liquidity (buy and sell orders)
+      let res1 = await fetch(`https://api.radarrelay.com/v2/markets/ZRX-WETH/fills`);
+      let json = await res1.json()
+
+      // sort only available sell orders to buy
+      let liquidity = json.filter( function(item: ZRXOrderItem){return (item.type === zrxTakerType);} );
+      console.log(liquidity);
+
+      // set initial remaining value as user input order amount, and initiate current sell order index
+      var remaining = parseFloat(this.state.inputAmountText);
+      let cycle = 0;
+
+      while (remaining > 0) {
+        // get sell amount for cheapest order
+        let available = liquidity[cycle].filledBaseTokenAmount;
+
+        if (available === null) {
+          // if we run out of liquidity, make Fulcrum the taker
+          this.pushRadarRelayOrder(remaining, liquidity[cycle].filledQuoteTokenAmount, accounts[0], fulcrumAddress, liquidity[cycle].feeRecipientAddress, zrxTradeType);
+        }
+
+        if (available < remaining) {
+          // if amount is greater than current existing sell order
+          setTimeout(()=>{}, 501); // each browser can only send 2 requests per second in Radar Relay API
+          this.pushRadarRelayOrder(available, liquidity[cycle].filledQuoteTokenAmount, accounts[0], liquidity[cycle].makerAddress, liquidity[cycle].feeRecipientAddress,  zrxTradeType)
+
+          // decrease remaining balance by current sell order amount
+          remaining = remaining - available;
+        } else {
+          // if buy order will be filled with this current sell order
+          this.pushRadarRelayOrder(remaining, liquidity[cycle].filledQuoteTokenAmount, accounts[0], liquidity[cycle].makerAddress, liquidity[cycle].feeRecipientAddress, zrxTradeType);
+
+          // set remaining balance to 0 to exit loop
+          remaining = 0;
+          console.log('done')
+        }
+
+        // move to next order
+        cycle++;
+      }
+    } catch (err) {
+      console.log(err);
+    }
+  }
 }
