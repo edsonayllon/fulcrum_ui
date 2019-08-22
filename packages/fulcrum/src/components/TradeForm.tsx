@@ -34,7 +34,7 @@ import {
 } from '0x.js';
 import { Web3Wrapper } from '@0x/web3-wrapper';
 import { SignerSubprovider } from '@0x/subproviders';
-import { evaluate } from 'mathjs'
+BigNumber.set({ DECIMAL_PLACES: 14 })
 
 declare let window: any;
 
@@ -51,7 +51,7 @@ console.log(providerEngine);
 const NETWORK_ID = process.env.REACT_APP_ETH_NETWORK === "mainnet" ? 1 :
                    process.env.REACT_APP_ETH_NETWORK === "kovan" ? 42 : 3 // is network mainnet, kovan or ropsten
 
-const contractWrappers = new ContractWrappers(providerEngine, { networkId: NETWORK_ID });
+const contractWrappers = new ContractWrappers(providerEngine, { networkId: NETWORK_ID, gasPrice: new BigNumber(20000000000) });
 
 const web3Wrapper = new Web3Wrapper(providerEngine);
 
@@ -968,21 +968,21 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
         // get sell amount for cheapest order
         // because we subtract from the amount in the token we are buying in, available must be priced in the token we buy
         // if we are buying 0x with ETH, available must be ETH price, vice versa
-        var available = zrxTradeType === "BUY" ? new BigNumber(liquidity[cycle].filledQuoteTokenAmount) : new BigNumber(liquidity[cycle].filledTokenTokenAmount);
+        var available = zrxTradeType === "BUY" ? new BigNumber(liquidity[cycle].filledQuoteTokenAmount) : new BigNumber(liquidity[cycle].filledBaseTokenAmount);
         // this will be the price of the token we are buying
-        var takerTokenAvailable = zrxTradeType === "BUY" ? new BigNumber(liquidity[cycle].filledTokenTokenAmount) : new BigNumber(liquidity[cycle].filledQuoteTokenAmount);
+        var takerTokenAvailable = zrxTradeType === "BUY" ? new BigNumber(liquidity[cycle].filledBaseTokenAmount) : new BigNumber(liquidity[cycle].filledQuoteTokenAmount);
 
         // if we run out of liquidity liquidity[cycle] should retun null
         if (available === null) {
           // if we run out of liquidity, make Fulcrum the taker
 
           // get previous prices before liquidity ran out
-          takerTokenAvailable = zrxTradeType === "BUY" ? new BigNumber(liquidity[cycle-1].filledTokenTokenAmount) : new BigNumber(liquidity[cycle-1].filledQuoteTokenAmount);
+          takerTokenAvailable = zrxTradeType === "BUY" ? new BigNumber(liquidity[cycle-1].filledBaseTokenAmount) : new BigNumber(liquidity[cycle-1].filledQuoteTokenAmount);
 
-          available = zrxTradeType === "BUY" ? new BigNumber(liquidity[cycle-1].filledQuoteTokenAmount) : new BigNumber(liquidity[cycle-1].filledTokenTokenAmount);
+          available = zrxTradeType === "BUY" ? new BigNumber(liquidity[cycle-1].filledQuoteTokenAmount) : new BigNumber(liquidity[cycle-1].filledBaseTokenAmount);
 
           // scale down request to remain with previous price
-          takerTokenAvailable = evaluate(`${remaining.toString()} * ${takerTokenAvailable.toString()} / ${available.toString()}`);
+          takerTokenAvailable = remaining.multipliedBy(takerTokenAvailable.dividedBy(available));
 
           // request remaining fund from Fulcrum
           this.pushRadarRelayOrder(remaining.toString(), takerTokenAvailable.toString(), accounts[0], fulcrumAddress, liquidity[cycle-1].feeRecipientAddress, zrxTradeType);
@@ -1002,7 +1002,13 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
           // if buy order will be filled with this current sell order
 
           // scale down order to remaining amount
-          takerTokenAvailable = evaluate(`${remaining.toString()} * ${takerTokenAvailable.toString()} / ${available.toString()}`);
+
+          let ratio = takerTokenAvailable.div(available);
+
+          console.log(takerTokenAvailable);
+          console.log(available);
+          console.log(ratio);
+          takerTokenAvailable = await remaining.multipliedBy(ratio);
 
           console.log(takerTokenAvailable.toString());
 
