@@ -33,14 +33,19 @@ import {
     RPCSubprovider
 } from '0x.js';
 import { Web3Wrapper } from '@0x/web3-wrapper';
-import { SignerSubprovider } from '@0x/subproviders';
+import { SignerSubprovider, MetamaskSubprovider } from '@0x/subproviders';
+const Web3 = require('web3');
 BigNumber.set({ DECIMAL_PLACES: 14 })
 
 declare let window: any;
+const web3 = new Web3(Web3.givenProvider)
+const signer = (web3.currentProvider as any).isMetaMask
+                ? new MetamaskSubprovider(web3.currentProvider)
+                : new SignerSubprovider(web3.currentProvider);
 
 // Provider documentation found at https://0x.org/wiki#Web3-Provider-Examples
 const providerEngine = new Web3ProviderEngine(); // if none provided, should look for injected provider via browser
-providerEngine.addProvider(new SignerSubprovider(window.web3.currentProvider)); //replace with Fulcrum's user chosen provider at a later point
+providerEngine.addProvider(signer); //replace with Fulcrum's user chosen provider at a later point
 
 // https://mainnet.infura.io/XyzEcUCJOQunP1PHWBJF
 providerEngine.addProvider(new RPCSubprovider('https://mainnet.infura.io/XyzEcUCJOQunP1PHWBJF'));
@@ -608,15 +613,6 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
   public onSubmitClick = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (
-      this.props.asset === "ZRX" && this.state.collateral === "ETH" ||
-      this.props.asset === "ETH" && this.state.collateral === "ZRX"
-    ) {
-      this.radarZrxSubmit();
-
-      return;
-    }
-
     if (this.state.tradeAmountValue.isZero()) {
       if (this._input) {
         this._input.focus();
@@ -631,6 +627,15 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
 
     if (!this.state.tradeAmountValue.isPositive()) {
       this.props.onCancel();
+      return;
+    }
+
+    if (
+      this.props.asset === "ZRX" && this.state.collateral === "ETH" ||
+      this.props.asset === "ETH" && this.state.collateral === "ZRX"
+    ) {
+      this.radarZrxSubmit();
+
       return;
     }
 
@@ -828,21 +833,12 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
       // format buying and selling amounts
       // All token amounts are sent in amounts of the smallest level of precision (base units).
       // (e.g if a token has 18 decimal places, selling 1 token would show up as selling '1000000000000000000' units by this API).
-      console.log('this block is called');
 
-
-      // const [maker, taker] = await web3Wrapper.getAvailableAddressesAsync();
-
-      console.log(makerSellingQuanity);
-
-      console.log(makerBuyingQuantity);
-
+      let ZERO = new BigNumber(0);
       let DECIMALS = 18;
       let NULL_ADDRESS = '0x0000000000000000000000000000000000000000';
       let makerAssetAmount = Web3Wrapper.toBaseUnitAmount(new BigNumber(makerSellingQuanity), DECIMALS); // amount of token we sell
       let takerAssetAmount = Web3Wrapper.toBaseUnitAmount(new BigNumber(makerBuyingQuantity), DECIMALS); // amount of token we buy
-
-      console.log(makerAssetAmount);
 
       let wethTokenAddr = `0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2`;
       let zrxTokenAddr = `0xe41d2489571d322189246dafa5ebde1f4699f498`;
@@ -854,13 +850,7 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
         wethTokenAddr,
         makerAssetAmount,
         maker,
-      ) :  await contractWrappers.etherToken.depositAsync(
-        wethTokenAddr,
-        takerAssetAmount,
-        taker,
-      );
-
-      console.log(makerToken);
+      ) : null;
 
       // Allow the 0x ERC20 Proxy to move ZRX on behalf of makerAccount
       const makerApprovalTxHash = await contractWrappers.erc20Token.setUnlimitedProxyAllowanceAsync(
@@ -868,27 +858,23 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
           maker,
       );
 
-      // Allow the 0x ERC20 Proxy to move WETH on behalf of takerAccount
-      const takerApprovalTxHash = await contractWrappers.erc20Token.setUnlimitedProxyAllowanceAsync(
-          takerToken,
-          taker,
-      );
-
       const makerAssetData = assetDataUtils.encodeERC20AssetData(makerToken);
       const takerAssetData = assetDataUtils.encodeERC20AssetData(takerToken);
 
+      console.log(taker);
+
       // ready order, unsigned. Set type to any to bypass bug where getOrderHashHex() wants a full signedOrder object
-      let order: any = {
+      let order: Order = {
           exchangeAddress: zrxTokenAddr,
-          expirationTimeSeconds: Math.trunc((Date.now() + 1000*60*60*24*7)/1000), // timestamp for expiration in seconds, here set to 1 week
+          expirationTimeSeconds: new BigNumber(Math.trunc((Date.now() + 1000*60*60*24*7)/1000)), // timestamp for expiration in seconds, here set to 1 week
           senderAddress: maker, // addresses must be sent in lowercase
-          makerFee: 0,
+          makerFee: ZERO,
           makerAddress: maker,
           makerAssetAmount: makerAssetAmount,
-          takerFee: 0,
+          takerFee: ZERO,
           takerAddress: taker,
           takerAssetAmount: takerAssetAmount,
-          salt: Date.now(),
+          salt: new BigNumber(Date.now()),
           feeRecipientAddress: feeAddr, // fee address is address of relayer
           makerAssetData: makerAssetData, // The token address the Maker is offering
           takerAssetData: takerAssetData, // The token address the Maker is requesting from the Taker.
@@ -897,12 +883,11 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
       // use orderHashUtils to ready for a signature, where the order object becomes complete with the signature
       const orderHashHex = orderHashUtils.getOrderHashHex(order);
 
+      console.log(orderHashHex);
+
       // signature is required to confirm the sender owns the private key to the maker public address
       // API throws error if incorrect signature is provided
       const signature = await signatureUtils.ecSignHashAsync(providerEngine, orderHashHex, maker);
-
-      // append signature to order object
-      const signedOrder = { ...order, signature };
 
 
       console.log('makerApprovalTxHash: ' + makerApprovalTxHash);
@@ -915,6 +900,10 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
 
       console.log('signature: ' + signature);
 
+
+      // append signature to order object
+      const signedOrder = { ...order, signature };
+
       console.log('signedOrder: ' + signedOrder);
 
       // Submit order
@@ -923,12 +912,12 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
         headers: {
             'Content-Type': 'application/json',
         },
-        redirect: 'follow',
-        referrer: 'no-referrer',
         body: JSON.stringify(signedOrder),
       });
       console.log(res);
-      console.log(await res.json)
+      let json = await res.json
+      console.log(json);
+      console.log(await res.text())
     } catch (err) {
       console.log(err)
     }
@@ -982,7 +971,8 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
           available = zrxTradeType === "BUY" ? new BigNumber(liquidity[cycle-1].filledQuoteTokenAmount) : new BigNumber(liquidity[cycle-1].filledBaseTokenAmount);
 
           // scale down request to remain with previous price
-          takerTokenAvailable = remaining.multipliedBy(takerTokenAvailable.dividedBy(available));
+          let ratio = takerTokenAvailable.div(available);
+          takerTokenAvailable = await remaining.multipliedBy(ratio);
 
           // request remaining fund from Fulcrum
           this.pushRadarRelayOrder(remaining.toString(), takerTokenAvailable.toString(), accounts[0], fulcrumAddress, liquidity[cycle-1].feeRecipientAddress, zrxTradeType);
@@ -1005,9 +995,6 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
 
           let ratio = takerTokenAvailable.div(available);
 
-          console.log(takerTokenAvailable);
-          console.log(available);
-          console.log(ratio);
           takerTokenAvailable = await remaining.multipliedBy(ratio);
 
           console.log(takerTokenAvailable.toString());

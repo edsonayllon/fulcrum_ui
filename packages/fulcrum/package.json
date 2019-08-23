@@ -38,7 +38,8 @@
     "react-tippy": "^1.2.3",
     "recharts": "^1.5.0",
     "rxjs": "^6.5.2",
-    "squarelink": "^0.4.1"
+    "squarelink": "^0.4.1",
+    "web3": "^1.2.1"
   },
   "devDependencies": {
     "@0x/abi-gen": "^2.0.9",
@@ -46,15 +47,14 @@
     "@types/events": "^3.0.0",
     "@types/jest": "24.0.11",
     "@types/lodash": "^4.14.123",
+    "@types/mathjs": "^6.0.1",
     "@types/node": "8.10.43",
     "@types/react": "^16.8.7",
     "@types/react-dom": "^16.8.2",
     "@types/react-modal": "^3.8.1",
     "@types/react-router-dom": "^4.3.1",
     "@types/recharts": "^1.1.14",
-    "@types/web3": "^1.0.18",
     "@walletconnect/types": "^1.0.0-beta.22",
-    "@types/mathjs": "^6.0.1",
     "cross-env": "^5.2.0",
     "node-sass": "^4.11.0",
     "prettier": "^1.16.4",
