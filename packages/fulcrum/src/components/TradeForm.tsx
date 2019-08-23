@@ -30,8 +30,9 @@ import {
     ContractWrappers,
     Order,
     BigNumber,
-    RPCSubprovider
+    RPCSubprovider,
 } from '0x.js';
+import { getContractAddressesForNetworkOrThrow } from '@0x/contract-addresses';
 import { Web3Wrapper } from '@0x/web3-wrapper';
 import { SignerSubprovider, MetamaskSubprovider } from '@0x/subproviders';
 const Web3 = require('web3');
@@ -51,10 +52,10 @@ providerEngine.addProvider(signer); //replace with Fulcrum's user chosen provide
 providerEngine.addProvider(new RPCSubprovider('https://mainnet.infura.io/XyzEcUCJOQunP1PHWBJF'));
 providerEngine.start();
 
-console.log(providerEngine);
-
 const NETWORK_ID = process.env.REACT_APP_ETH_NETWORK === "mainnet" ? 1 :
                    process.env.REACT_APP_ETH_NETWORK === "kovan" ? 42 : 3 // is network mainnet, kovan or ropsten
+
+const contractAddresses = getContractAddressesForNetworkOrThrow(NETWORK_ID);
 
 const contractWrappers = new ContractWrappers(providerEngine, { networkId: NETWORK_ID, gasPrice: new BigNumber(20000000000) });
 
@@ -861,11 +862,9 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
       const makerAssetData = assetDataUtils.encodeERC20AssetData(makerToken);
       const takerAssetData = assetDataUtils.encodeERC20AssetData(takerToken);
 
-      console.log(taker);
-
       // ready order, unsigned. Set type to any to bypass bug where getOrderHashHex() wants a full signedOrder object
       let order: Order = {
-          exchangeAddress: zrxTokenAddr,
+          exchangeAddress: contractAddresses.exchange,
           expirationTimeSeconds: new BigNumber(Math.trunc((Date.now() + 1000*60*60*24*7)/1000)), // timestamp for expiration in seconds, here set to 1 week
           senderAddress: NULL_ADDRESS, // addresses must be sent in lowercase
           makerFee: ZERO,
@@ -883,28 +882,12 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
       // use orderHashUtils to ready for a signature, where the order object becomes complete with the signature
       const orderHashHex = orderHashUtils.getOrderHashHex(order);
 
-      console.log(orderHashHex);
-
       // signature is required to confirm the sender owns the private key to the maker public address
       // API throws error if incorrect signature is provided
       const signature = await signatureUtils.ecSignHashAsync(providerEngine, orderHashHex, maker);
 
-
-      console.log('makerApprovalTxHash: ' + makerApprovalTxHash);
-
-      console.log('takerWETHDepositTxHash: ' + takerWETHDepositTxHash);
-
-      console.log('takerAssetData: ' + takerAssetData);
-
-      console.log('orderHashHex: ' + orderHashHex);
-
-      console.log('signature: ' + signature);
-
-
       // append signature to order object
       const signedOrder = { ...order, signature };
-
-      console.log('signedOrder: ' + signedOrder);
 
       // Submit order
       let res = await fetch(`https://api.radarrelay.com/v2/orders`, {
@@ -914,7 +897,6 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
         },
         body: JSON.stringify(signedOrder),
       });
-      console.log(res);
       let json = await res.json
       console.log(json);
       console.log(await res.text())
@@ -938,19 +920,17 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
       let res1 = await fetch(`https://api.radarrelay.com/v2/markets/ZRX-WETH/fills`);
       let json = await res1.json()
 
-      console.log(json);
+      console.log('All available orders: ' + json);
 
       // sort only available sell orders to buy
       const liquidity = json.filter( function(item: ZRXOrderItem){return (item.type === zrxTakerType);} );
-      console.log(liquidity);
+      console.log('Liquidity for order type: ' + liquidity);
 
       // set initial remaining value as user input order amount, and initiate current sell order index
       // remaining is the amount the user typed for how much they are selling
 
       var remaining = this.state.inputAmountValue; // leave as big number;\
-      console.log(remaining.toString())
       var cycle = 0;
-
 
       // pushes orders until requested amount is filled, or liquidity run out
       // if liquidity runs out, fulcrum becomes the taker
@@ -961,8 +941,6 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
         var available = zrxTradeType === "BUY" ? new BigNumber(liquidity[cycle].filledQuoteTokenAmount) : new BigNumber(liquidity[cycle].filledBaseTokenAmount);
         // this will be the price of the token we are buying
         var takerTokenAvailable = zrxTradeType === "BUY" ? new BigNumber(liquidity[cycle].filledBaseTokenAmount) : new BigNumber(liquidity[cycle].filledQuoteTokenAmount);
-
-        let takerAddress = zrxTradeType === "BUY" ? liquidity[cycle].makerAddress : liquidity[cycle].takerAddress;
 
         // if we run out of liquidity liquidity[cycle] should retun null
         if (available === null) {
@@ -1000,8 +978,6 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
           let ratio = takerTokenAvailable.div(available);
 
           takerTokenAvailable = await remaining.multipliedBy(ratio);
-
-          console.log(takerTokenAvailable.toString());
 
           this.pushRadarRelayOrder(remaining.toString(), takerTokenAvailable.toString(), accounts[0], liquidity[cycle].makerAddress, liquidity[cycle].feeRecipientAddress, zrxTradeType);
 
