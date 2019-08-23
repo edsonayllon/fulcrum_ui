@@ -836,7 +836,7 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
 
       let ZERO = new BigNumber(0);
       let DECIMALS = 18;
-      let NULL_ADDRESS = '0x0000000000000000000000000000000000000000';
+      let NULL_ADDRESS = '0x0000000000000000000000000000000000000000'.toLowerCase();
       let makerAssetAmount = Web3Wrapper.toBaseUnitAmount(new BigNumber(makerSellingQuanity), DECIMALS); // amount of token we sell
       let takerAssetAmount = Web3Wrapper.toBaseUnitAmount(new BigNumber(makerBuyingQuantity), DECIMALS); // amount of token we buy
 
@@ -867,12 +867,12 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
       let order: Order = {
           exchangeAddress: zrxTokenAddr,
           expirationTimeSeconds: new BigNumber(Math.trunc((Date.now() + 1000*60*60*24*7)/1000)), // timestamp for expiration in seconds, here set to 1 week
-          senderAddress: maker, // addresses must be sent in lowercase
+          senderAddress: NULL_ADDRESS, // addresses must be sent in lowercase
           makerFee: ZERO,
           makerAddress: maker,
           makerAssetAmount: makerAssetAmount,
           takerFee: ZERO,
-          takerAddress: taker,
+          takerAddress: NULL_ADDRESS,
           takerAssetAmount: takerAssetAmount,
           salt: new BigNumber(Date.now()),
           feeRecipientAddress: feeAddr, // fee address is address of relayer
@@ -951,6 +951,7 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
       console.log(remaining.toString())
       var cycle = 0;
 
+
       // pushes orders until requested amount is filled, or liquidity run out
       // if liquidity runs out, fulcrum becomes the taker
       while (remaining.isGreaterThan(new BigNumber(0))) {
@@ -960,6 +961,8 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
         var available = zrxTradeType === "BUY" ? new BigNumber(liquidity[cycle].filledQuoteTokenAmount) : new BigNumber(liquidity[cycle].filledBaseTokenAmount);
         // this will be the price of the token we are buying
         var takerTokenAvailable = zrxTradeType === "BUY" ? new BigNumber(liquidity[cycle].filledBaseTokenAmount) : new BigNumber(liquidity[cycle].filledQuoteTokenAmount);
+
+        let takerAddress = zrxTradeType === "BUY" ? liquidity[cycle].makerAddress : liquidity[cycle].takerAddress;
 
         // if we run out of liquidity liquidity[cycle] should retun null
         if (available === null) {
@@ -981,6 +984,7 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
 
         } else if (available.isLessThan(remaining)) {
           // if amount is greater than current existing sell order, make one order, then go to the next
+
           this.pushRadarRelayOrder(available.toString(), takerTokenAvailable.toString(), accounts[0], liquidity[cycle].makerAddress, liquidity[cycle].feeRecipientAddress,  zrxTradeType)
 
           // each browser can only send 2 requests per second in Radar Relay API
