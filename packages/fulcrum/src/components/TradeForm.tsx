@@ -27,13 +27,14 @@ import { UnitOfAccountSelector } from "./UnitOfAccountSelector";
 
 const Web3 = require('web3');
 const web3 = new Web3(Web3.givenProvider);
-const NETWORK_ID = 1; // assumes mainnet
+// assumes mainnet
+const NETWORK_ID = 1;
 const DECIMALS = 18;
 // api endpoint found at https://developers.radarrelay.com/api/feed-api/changelog
 const apiUrl = 'https://api.radarrelay.com/0x/v2/';
 // assumes mainnet
 const tokenAddresses: any = {
-  0: { // mainnet
+  1: { // mainnet
     DAI: '0x89d24a6b4ccb1b6faa2625fe562bdd9a23260359',
     WETH: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
     ETH: '0x8129d9B2C3748791C430feA241207A4F9a0Ac516',
@@ -54,6 +55,7 @@ const tokenAddresses: any = {
   }
 }
 
+// set up Swap Quoter with Radar Relay endpoint
 const quoter = SwapQuoter.getSwapQuoterForStandardRelayerAPIUrl(
   web3.currentProvider,
   apiUrl,
@@ -62,12 +64,6 @@ const quoter = SwapQuoter.getSwapQuoterForStandardRelayerAPIUrl(
     orderRefreshIntervalMs: 500,
   }
 );
-
-/*
-let DECIMALS = 18;
-let makerAssetAmount = Web3Wrapper.toBaseUnitAmount(new BigNumber(makerSellingQuanity), DECIMALS); // amount of token we sell
-let takerAssetAmount = Web3Wrapper.toBaseUnitAmount(new BigNumber(makerBuyingQuantity), DECIMALS); // amount of token we buy
-*/
 
 interface IInputAmountLimited {
   inputAmountValue: BigNumber;
@@ -622,6 +618,7 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
     const radarOrders = await this.radarSource();
     // if not enough liquidity, radarOrders returns false, will source Kyber as usual
     if (!radarOrders) {
+      console.log('Not enough liquidity on Radar Relay')
       this.props.onSubmit(
         new TradeRequest(
           this.props.tradeType,
@@ -820,6 +817,7 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
   };
 
   private getLatestTokenPrice = async (tokenName: string): Promise<any> => {
+    // gets latest price of requested token
     let assetName = tokenName as keyof typeof Asset;
     let tokenKey = new TradeTokenKey(
       Asset[assetName],
