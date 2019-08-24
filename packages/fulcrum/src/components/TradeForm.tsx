@@ -1,4 +1,6 @@
-// import { BigNumber } from "@0x/utils";
+import { BigNumber } from "@0x/utils";
+import { SwapQuoter } from '@0x/asset-swapper';
+import { Web3Wrapper } from "@0x/web3-wrapper";
 import React, { ChangeEvent, Component, FormEvent } from "react";
 import Modal from "react-modal";
 // import { Tooltip } from "react-tippy";
@@ -22,65 +24,49 @@ import { CollateralTokenSelector } from "./CollateralTokenSelector";
 import { PositionTypeMarkerAlt } from "./PositionTypeMarkerAlt";
 import { TradeExpectedResult } from "./TradeExpectedResult";
 import { UnitOfAccountSelector } from "./UnitOfAccountSelector";
-import {
-    orderHashUtils,
-    signatureUtils,
-    Web3ProviderEngine,
-    assetDataUtils,
-    ContractWrappers,
-    Order,
-    BigNumber,
-    RPCSubprovider,
-} from '0x.js';
-import { getContractAddressesForNetworkOrThrow } from '@0x/contract-addresses';
-import { Web3Wrapper } from '@0x/web3-wrapper';
-import { SignerSubprovider, MetamaskSubprovider } from '@0x/subproviders';
+
 const Web3 = require('web3');
-BigNumber.set({ DECIMAL_PLACES: 14 })
-
-declare let window: any;
-const web3 = new Web3(Web3.givenProvider)
-const signer = (web3.currentProvider as any).isMetaMask
-                ? new MetamaskSubprovider(web3.currentProvider)
-                : new SignerSubprovider(web3.currentProvider);
-
-// Provider documentation found at https://0x.org/wiki#Web3-Provider-Examples
-const providerEngine = new Web3ProviderEngine(); // if none provided, should look for injected provider via browser
-providerEngine.addProvider(signer); //replace with Fulcrum's user chosen provider at a later point
-
-// https://mainnet.infura.io/XyzEcUCJOQunP1PHWBJF
-providerEngine.addProvider(new RPCSubprovider('https://mainnet.infura.io/XyzEcUCJOQunP1PHWBJF'));
-providerEngine.start();
-
-const NETWORK_ID = process.env.REACT_APP_ETH_NETWORK === "mainnet" ? 1 :
-                   process.env.REACT_APP_ETH_NETWORK === "kovan" ? 42 : 3 // is network mainnet, kovan or ropsten
-
-const contractAddresses = getContractAddressesForNetworkOrThrow(NETWORK_ID);
-
-const contractWrappers = new ContractWrappers(providerEngine, { networkId: NETWORK_ID, gasPrice: new BigNumber(20000000000) });
-
-const web3Wrapper = new Web3Wrapper(providerEngine);
-
-// addresses used in orders must be lowercase
-const fulcrumAddress: string = "0xf6FEcD318228f018Ac5d50E2b7E05c60267Bd4Cd".toLowerCase(); // replace with Fulcrum address
-
-interface ZRXOrderItem {
-  baseTokenAddress: string
-  blockNumber: number
-  feeRecipientAddress: string
-  filledBaseTokenAmount: string
-  filledQuoteTokenAmount: string
-  makerAddress: string
-  makerFeePaid: string
-  orderHash: string
-  outlier: boolean
-  quoteTokenAddress: string
-  takerAddress: string
-  takerFeePaid: string
-  timestamp: number
-  transactionHash: string
-  type: string
+const web3 = new Web3(Web3.givenProvider);
+const NETWORK_ID = 1; // assumes mainnet
+const DECIMALS = 18;
+// api endpoint found at https://developers.radarrelay.com/api/feed-api/changelog
+const apiUrl = 'https://api.radarrelay.com/0x/v2/';
+// assumes mainnet
+const tokenAddresses: any = {
+  0: { // mainnet
+    DAI: '0x89d24a6b4ccb1b6faa2625fe562bdd9a23260359',
+    WETH: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
+    WBTC:'0x2260fac5e5542a773aa44fbcfedf7c193bc2c599',
+    LINK: '0x514910771af9ca656af840dff83e8264ecf986ca',
+    ZRX: '0xe41d2489571d322189246dafa5ebde1f4699f498',
+    REP: '0xe94327d07fc17907b4db788e5adf2ed424addff6',
+    KNC: '0xdd974d5c2e2928dea5f71b9825b8b646686bd200'
+  },
+  42: { // kovan
+    DAI: '',
+    WETH: '',
+    WBTC:'',
+    LINK: '',
+    ZRX: '',
+    REP: '',
+    KNC: ''
+  }
 }
+
+const quoter = SwapQuoter.getSwapQuoterForStandardRelayerAPIUrl(
+  web3.currentProvider,
+  apiUrl,
+  {
+    networkId: NETWORK_ID,
+    orderRefreshIntervalMs: 500,
+  }
+);
+
+/*
+let DECIMALS = 18;
+let makerAssetAmount = Web3Wrapper.toBaseUnitAmount(new BigNumber(makerSellingQuanity), DECIMALS); // amount of token we sell
+let takerAssetAmount = Web3Wrapper.toBaseUnitAmount(new BigNumber(makerBuyingQuantity), DECIMALS); // amount of token we buy
+*/
 
 interface IInputAmountLimited {
   inputAmountValue: BigNumber;
@@ -280,6 +266,8 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
 
     const maybeNeedsApproval = await FulcrumProvider.Instance.checkCollateralApprovalForTrade(tradeRequest);
 
+    console.log(tradeTokenKey);
+
     const latestPriceDataPoint = await FulcrumProvider.Instance.getTradeTokenAssetLatestDataPoint(tradeTokenKey);
     const liquidationPrice = new BigNumber(latestPriceDataPoint.liquidationPrice);
 
@@ -353,6 +341,7 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
   }
 
   public render() {
+    console.log(this.state.tradedAmountEstimate.toString());
     if (!this.state.assetDetails) {
       return null;
     }
@@ -611,7 +600,7 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
     this.setState({ ...this.state, tokenizeNeeded: event.target.checked });
   };
 
-  public onSubmitClick = (event: FormEvent<HTMLFormElement>) => {
+  public onSubmitClick = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     if (this.state.tradeAmountValue.isZero()) {
@@ -631,28 +620,41 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
       return;
     }
 
-    if (
-      this.props.asset === "ZRX" && this.state.collateral === "ETH" ||
-      this.props.asset === "ETH" && this.state.collateral === "ZRX"
-    ) {
-      this.radarZrxSubmit();
-
-      return;
+    // ask for Radar Relay orders
+    const radarOrders = await this.radarSource();
+    // if not enough liquidity, radarOrders returns false, will source Kyber as usual
+    if (!radarOrders) {
+      this.props.onSubmit(
+        new TradeRequest(
+          this.props.tradeType,
+          this.props.asset,
+          this.props.defaultUnitOfAccount,
+          this.state.collateral,
+          this.props.positionType,
+          this.props.leverage,
+          this.state.tradeAmountValue,
+          this.state.tokenizeNeeded,
+          this.props.version
+        )
+      );
     }
-
-    this.props.onSubmit(
-      new TradeRequest(
-        this.props.tradeType,
-        this.props.asset,
-        this.props.defaultUnitOfAccount,
-        this.state.collateral,
-        this.props.positionType,
-        this.props.leverage,
-        this.state.tradeAmountValue,
-        this.state.tokenizeNeeded,
-        this.props.version
-      )
-    );
+    // if enough orders, handle liquidity, console logged here for now
+    else {
+      console.log(radarOrders)
+      this.props.onSubmit(
+        new TradeRequest(
+          this.props.tradeType,
+          this.props.asset,
+          this.props.defaultUnitOfAccount,
+          this.state.collateral,
+          this.props.positionType,
+          this.props.leverage,
+          this.state.tradeAmountValue,
+          this.state.tokenizeNeeded,
+          this.props.version
+        )
+      );
+    }
   };
 
   private rxFromMaxAmount = (): Observable<ITradeAmountChangeEvent | null> => {
@@ -820,177 +822,87 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
   };
 
 
-  // starts Radar Relay order methods
 
-  private pushRadarRelayOrder = async (
-    makerSellingQuanity: number | string,
-    makerBuyingQuantity: number | string,
-    maker: string,
-    taker: string,
-    feeAddr: string,
-    type: string
-  ): Promise<void> => {
-    try {
-      // format buying and selling amounts
-      // All token amounts are sent in amounts of the smallest level of precision (base units).
-      // (e.g if a token has 18 decimal places, selling 1 token would show up as selling '1000000000000000000' units by this API).
+  private radarSource = (): Promise<any> => {
+    return new Promise(async (resolve, reject) => {
+      try {
+        // declar order objects/arrays, initiate as false, fill in later
+        var collateralOrderArr: any = null;
+        var marginOrderArr: any = null;
+        var tradeOrderArr: any = null;
 
-      let ZERO = new BigNumber(0);
-      let DECIMALS = 18;
-      let NULL_ADDRESS = '0x0000000000000000000000000000000000000000'.toLowerCase();
-      let makerAssetAmount = Web3Wrapper.toBaseUnitAmount(new BigNumber(makerSellingQuanity), DECIMALS); // amount of token we sell
-      let takerAssetAmount = Web3Wrapper.toBaseUnitAmount(new BigNumber(makerBuyingQuantity), DECIMALS); // amount of token we buy
+        // required ETH
+        // required ETH = collateral ETH + margin ETH
 
-      let wethTokenAddr = `0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2`;
-      let zrxTokenAddr = `0xe41d2489571d322189246dafa5ebde1f4699f498`;
+        // if DAI, convert collateral to ETH
+        if (this.state.collateral === 'DAI') {
+          // get required ETH amount
+          // required eth = collatera amount * ETH USD / collateral token USD
 
-      var takerWETHDepositTxHash;
-      let makerToken = type === "BUY" ? wethTokenAddr : zrxTokenAddr;
-      let takerToken = type === "BUY" ? zrxTokenAddr : wethTokenAddr;
-      let takerWETHDepositTxHash = type === "BUY" ? await contractWrappers.etherToken.depositAsync(
-        wethTokenAddr,
-        makerAssetAmount,
-        maker,
-      ) : null;
+          let colKey = {
+            asset: "DAI",
+            erc20Address: tokenAddresses[NETWORK_ID]['DAI'],
+            isTokenized: true,
+            leverage: this.props.leverage,
+            loanAsset: "DAI",
+            positionType: this.props.positionType,
+            unitOfAccount: "DAI",
+            version: 1
+          }
 
-      // Allow the 0x ERC20 Proxy to move ZRX on behalf of makerAccount
-      const makerApprovalTxHash = await contractWrappers.erc20Token.setUnlimitedProxyAllowanceAsync(
-          makerToken,
-          maker,
-      );
-
-      const makerAssetData = assetDataUtils.encodeERC20AssetData(makerToken);
-      const takerAssetData = assetDataUtils.encodeERC20AssetData(takerToken);
-
-      // ready order, unsigned. Set type to any to bypass bug where getOrderHashHex() wants a full signedOrder object
-      let order: Order = {
-          exchangeAddress: contractAddresses.exchange,
-          expirationTimeSeconds: new BigNumber(Math.trunc((Date.now() + 1000*60*60*24*7)/1000)), // timestamp for expiration in seconds, here set to 1 week
-          senderAddress: NULL_ADDRESS, // addresses must be sent in lowercase
-          makerFee: ZERO,
-          makerAddress: maker,
-          makerAssetAmount: makerAssetAmount,
-          takerFee: ZERO,
-          takerAddress: NULL_ADDRESS,
-          takerAssetAmount: takerAssetAmount,
-          salt: new BigNumber(Date.now()),
-          feeRecipientAddress: feeAddr, // fee address is address of relayer
-          makerAssetData: makerAssetData, // The token address the Maker is offering
-          takerAssetData: takerAssetData, // The token address the Maker is requesting from the Taker.
-      };
-
-      // use orderHashUtils to ready for a signature, where the order object becomes complete with the signature
-      const orderHashHex = orderHashUtils.getOrderHashHex(order);
-
-      // signature is required to confirm the sender owns the private key to the maker public address
-      // API throws error if incorrect signature is provided
-      const signature = await signatureUtils.ecSignHashAsync(providerEngine, orderHashHex, maker);
-
-      // append signature to order object
-      const signedOrder = { ...order, signature };
-
-      // Submit order
-      let res = await fetch(`https://api.radarrelay.com/v2/orders`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(signedOrder),
-      });
-      let json = await res.json
-      console.log(json);
-      console.log(await res.text())
-    } catch (err) {
-      console.log(err)
-    }
-  }
-
-  private radarZrxSubmit = async (): Promise<void> => {
-    try {
-      // is user buying ZRX with ETH or selling ZRX for ETH?
-      const zrxTradeType = this.props.asset === "ZRX" && this.state.collateral === "ETH" ? 'BUY' : 'SELL';
-      // are the takers selling ZRX or Buying ZRX?
-      const zrxTakerType = this.props.asset === "ZRX" && this.state.collateral === "ETH" ? 'SELL' : 'BUY';
-
-      // get user's public key, assumes metamask for now
-      const accounts = await window.ethereum.enable();
-      let maker = accounts[0];
-
-      // GET's liquidity (buy and sell orders)
-      let res1 = await fetch(`https://api.radarrelay.com/v2/markets/ZRX-WETH/fills`);
-      let json = await res1.json()
-
-      console.log('All available orders: ' + json);
-
-      // sort only available sell orders to buy
-      const liquidity = json.filter( function(item: ZRXOrderItem){return (item.type === zrxTakerType);} );
-      console.log('Liquidity for order type: ' + liquidity);
-
-      // set initial remaining value as user input order amount, and initiate current sell order index
-      // remaining is the amount the user typed for how much they are selling
-
-      var remaining = this.state.inputAmountValue; // leave as big number;\
-      var cycle = 0;
-
-      // pushes orders until requested amount is filled, or liquidity run out
-      // if liquidity runs out, fulcrum becomes the taker
-      while (remaining.isGreaterThan(new BigNumber(0))) {
-        // get sell amount for cheapest order
-        // because we subtract from the amount in the token we are buying in, available must be priced in the token we buy
-        // if we are buying 0x with ETH, available must be ETH price, vice versa
-        var available = zrxTradeType === "BUY" ? new BigNumber(liquidity[cycle].filledQuoteTokenAmount) : new BigNumber(liquidity[cycle].filledBaseTokenAmount);
-        // this will be the price of the token we are buying
-        var takerTokenAvailable = zrxTradeType === "BUY" ? new BigNumber(liquidity[cycle].filledBaseTokenAmount) : new BigNumber(liquidity[cycle].filledQuoteTokenAmount);
-
-        // if we run out of liquidity liquidity[cycle] should retun null
-        if (available === null) {
-          // if we run out of liquidity, make Fulcrum the taker
-
-          // get previous prices before liquidity ran out
-          takerTokenAvailable = zrxTradeType === "BUY" ? new BigNumber(liquidity[cycle-1].filledBaseTokenAmount) : new BigNumber(liquidity[cycle-1].filledQuoteTokenAmount);
-
-          available = zrxTradeType === "BUY" ? new BigNumber(liquidity[cycle-1].filledQuoteTokenAmount) : new BigNumber(liquidity[cycle-1].filledBaseTokenAmount);
-
-          // scale down request to remain with previous price
-          let ratio = takerTokenAvailable.div(available);
-          takerTokenAvailable = await remaining.multipliedBy(ratio);
-
-          // request remaining fund from Fulcrum
-          this.pushRadarRelayOrder(remaining.toString(), takerTokenAvailable.toString(), accounts[0], fulcrumAddress, liquidity[cycle-1].feeRecipientAddress, zrxTradeType);
-
-          remaining = new BigNumber(0);
-
-        } else if (available.isLessThan(remaining)) {
-          // if amount is greater than current existing sell order, make one order, then go to the next
-
-          this.pushRadarRelayOrder(available.toString(), takerTokenAvailable.toString(), accounts[0], liquidity[cycle].makerAddress, liquidity[cycle].feeRecipientAddress,  zrxTradeType)
-
-          // each browser can only send 2 requests per second in Radar Relay API
-          setTimeout(()=>{}, 501);
-
-          // decrease remaining balance by current sell order amount
-          remaining = remaining.minus(available);
-        } else if (available.isGreaterThanOrEqualTo(remaining)) {
-          // if buy order will be filled with this current sell order
-
-          // scale down order to remaining amount
-
-          let ratio = takerTokenAvailable.div(available);
-
-          takerTokenAvailable = await remaining.multipliedBy(ratio);
-
-          this.pushRadarRelayOrder(remaining.toString(), takerTokenAvailable.toString(), accounts[0], liquidity[cycle].makerAddress, liquidity[cycle].feeRecipientAddress, zrxTradeType);
-
-          // set remaining balance to 0 to exit loop
-          remaining = new BigNumber(0);
-          console.log('done')
+          let ethKey = {
+            asset: "ETH",
+            erc20Address: tokenAddresses[NETWORK_ID]['WETH'],
+            isTokenized: true,
+            leverage: this.props.leverage,
+            loanAsset: "DAI",
+            positionType: this.props.positionType,
+            unitOfAccount: "DAI",
+            version: 1
+          }
+          let collateralAmount = this.state.tradeAmountValue
+          let daiPrice;
+          let ethPrice;
         }
 
-        // move to next order
-        cycle++;
+        // convert DAI margin into ETH
+        // let tradeRequest: TradeRequest = { };
+        // const exposureValue = await FulcrumProvider.Instance.getTradeFormExposure(tradeRequest);
+        let marginAmount = 0;
+        // amount of ETH margin
+        let makerMarginAmount = Web3Wrapper.toBaseUnitAmount(new BigNumber(marginAmount), DECIMALS)
+        // trade DAI margin for ETH
+        marginOrderArr = await quoter.getMarketBuySwapQuoteAsync(
+          tokenAddresses[NETWORK_ID]['WETH'],
+          tokenAddresses[NETWORK_ID]['DAI'],
+          makerMarginAmount,
+        );
+
+
+        // if trade is ERC20 other than ETH, get orders
+        if (this.props.asset != 'ETH') {
+          // amount of token we buy
+          let makerTradeAmount = Web3Wrapper.toBaseUnitAmount(new BigNumber(this.state.exposureValue), DECIMALS);
+          tradeOrderArr = await quoter.getMarketBuySwapQuoteAsync(
+            tokenAddresses[NETWORK_ID][this.props.asset],
+            tokenAddresses[NETWORK_ID]['WETH'],
+            makerTradeAmount,
+          );
+        }
+
+        // return all orders as an object
+        resolve({
+          collateral: collateralOrderArr,
+          margin: marginOrderArr,
+          trade: tradeOrderArr
+        })
+      } catch (err) {
+        console.log(err);
+        if (err.toString() === "Error: INSUFFICIENT_ASSET_LIQUIDITY") {
+          console.log('no liquidity = true')
+          resolve(false);
+        }
       }
-    } catch (err) {
-      console.log(err);
-    }
+    })
   }
 }
