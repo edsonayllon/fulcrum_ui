@@ -819,7 +819,19 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
     };
   };
 
-
+  private getLatestTokenPrice = async (tokenName: string): Promise<any> => {
+    let assetName = tokenName as keyof typeof Asset;
+    let tokenKey = new TradeTokenKey(
+      Asset[assetName],
+      this.props.defaultUnitOfAccount,
+      this.props.positionType,
+      this.props.leverage,
+      this.state.tokenizeNeeded,
+      this.props.version
+    );
+    let latestPrice = await FulcrumProvider.Instance.getTradeTokenAssetLatestDataPoint(tokenKey);
+    return new BigNumber(latestPrice.price);
+  }
 
   private radarSource = (): Promise<any> => {
     return new Promise(async (resolve, reject) => {
@@ -829,60 +841,51 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
         var marginOrderArr: any = null;
         var tradeOrderArr: any = null;
 
-        // get latest ETH and DAI Price for calculations
-        let ethKey = new TradeTokenKey(
-          Asset.ETH,
-          this.props.defaultUnitOfAccount,
-          this.props.positionType,
-          this.props.leverage,
-          this.state.tokenizeNeeded,
-          this.props.version
-        );
-        let daiKey = new TradeTokenKey(
-            Asset.DAI,
-            this.props.defaultUnitOfAccount,
-            this.props.positionType,
-            this.props.leverage,
-            this.state.tokenizeNeeded,
-            this.props.version
-          );
-        let latestEthPrice = await FulcrumProvider.Instance.getTradeTokenAssetLatestDataPoint(ethKey);
-        let latestDaiPrice = await FulcrumProvider.Instance.getTradeTokenAssetLatestDataPoint(daiKey);
-        let daiPrice = new BigNumber(latestDaiPrice.price);
-        let ethPrice = new BigNumber(latestEthPrice.price);
+        // get prices needed for calculation
+        let ethPrice = await this.getLatestTokenPrice('ETH');
+        let colPrice = await this.getLatestTokenPrice(this.state.collateral);
+        const priceRatioEthCol = ethPrice.dividedBy(colPrice);
 
-        // calculate ETH/DAI ratio
-        const priceRatioEthDai = ethPrice.dividedBy(daiPrice);
-
-        // get collateral amount
+        // get collateral amount for cacluations
         const collateralAmount = this.state.tradeAmountValue;
 
-        // if DAI, convert collateral to ETH
+        // make leverage a BigNumber for calculations
+        const lever = new BigNumber(this.props.leverage);
+
+
+        // get ETH needed for Long or Short on Radar Relay
+
+        // if DAI collateral, convert collateral + margin DAI to ETH, refered to as trading source amount
         if (this.state.collateral === 'DAI') {
+          // trading source amount: collateral + margin = collateral * leverage
+          let sourceAmount = collateralAmount.multipliedBy(lever);
 
           // get required ETH amount--ETH amount = ERC20 amount * ETH USD / ERC20 USD
-          let collateralEth = collateralAmount.multipliedBy(priceRatioEthDai)
+          let sourceEth = sourceAmount.multipliedBy(priceRatioEthCol);
 
-          // get order array for collateral
-          let makerTradeAmount = Web3Wrapper.toBaseUnitAmount(new BigNumber(collateralEth), DECIMALS);
+          // get order array for collateral + margin DAI
+          let makerTradeAmount = Web3Wrapper.toBaseUnitAmount(new BigNumber(sourceEth), DECIMALS);
           collateralOrderArr = await quoter.getMarketBuySwapQuoteAsync( // we buy WETH with DAI
             tokenAddresses[NETWORK_ID]['WETH'],
             tokenAddresses[NETWORK_ID]['DAI'],
             makerTradeAmount,
           );
         }
+        // in all other cases, only convert margin in DAI to ETH
+        else {
+          // even though margin is in DAI, we only calculate ETH needed
+          // margin = collateral*leverage - collateral
+          let marginAmount = collateralAmount.multipliedBy(lever).minus(collateralAmount);
 
-        // if taking out margin, trade margin in DAI to ETH
-        if (this.props.leverage > 1) {
-          //
-          let marginAmount = 0;
-          // amount of ETH margin
-          let makerMarginAmount = Web3Wrapper.toBaseUnitAmount(new BigNumber(marginAmount), DECIMALS)
-          // trade DAI margin for ETH
-          marginOrderArr = await quoter.getMarketBuySwapQuoteAsync(
+          // get required ETH amount--ETH amount = ERC20 amount * ETH USD / ERC20 USD
+          let marginEth = marginAmount.multipliedBy(priceRatioEthCol);
+
+          // get order array for margin
+          let makerTradeAmount = Web3Wrapper.toBaseUnitAmount(new BigNumber(marginEth), DECIMALS);
+          marginOrderArr = await quoter.getMarketBuySwapQuoteAsync( // we buy WETH with DAI
             tokenAddresses[NETWORK_ID]['WETH'],
             tokenAddresses[NETWORK_ID]['DAI'],
-            makerMarginAmount,
+            makerTradeAmount,
           );
         }
 
