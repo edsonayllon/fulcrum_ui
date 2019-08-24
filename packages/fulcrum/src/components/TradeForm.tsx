@@ -36,6 +36,7 @@ const tokenAddresses: any = {
   0: { // mainnet
     DAI: '0x89d24a6b4ccb1b6faa2625fe562bdd9a23260359',
     WETH: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
+    ETH: '0x8129d9B2C3748791C430feA241207A4F9a0Ac516',
     WBTC:'0x2260fac5e5542a773aa44fbcfedf7c193bc2c599',
     LINK: '0x514910771af9ca656af840dff83e8264ecf986ca',
     ZRX: '0xe41d2489571d322189246dafa5ebde1f4699f498',
@@ -266,8 +267,6 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
 
     const maybeNeedsApproval = await FulcrumProvider.Instance.checkCollateralApprovalForTrade(tradeRequest);
 
-    console.log(tradeTokenKey);
-
     const latestPriceDataPoint = await FulcrumProvider.Instance.getTradeTokenAssetLatestDataPoint(tradeTokenKey);
     const liquidationPrice = new BigNumber(latestPriceDataPoint.liquidationPrice);
 
@@ -341,7 +340,6 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
   }
 
   public render() {
-    console.log(this.state.tradedAmountEstimate.toString());
     if (!this.state.assetDetails) {
       return null;
     }
@@ -831,59 +829,68 @@ export class TradeForm extends Component<ITradeFormProps, ITradeFormState> {
         var marginOrderArr: any = null;
         var tradeOrderArr: any = null;
 
-        // required ETH
-        // required ETH = collateral ETH + margin ETH
+        // get latest ETH and DAI Price for calculations
+        let ethKey = new TradeTokenKey(
+          Asset.ETH,
+          this.props.defaultUnitOfAccount,
+          this.props.positionType,
+          this.props.leverage,
+          this.state.tokenizeNeeded,
+          this.props.version
+        );
+        let daiKey = new TradeTokenKey(
+            Asset.DAI,
+            this.props.defaultUnitOfAccount,
+            this.props.positionType,
+            this.props.leverage,
+            this.state.tokenizeNeeded,
+            this.props.version
+          );
+        let latestEthPrice = await FulcrumProvider.Instance.getTradeTokenAssetLatestDataPoint(ethKey);
+        let latestDaiPrice = await FulcrumProvider.Instance.getTradeTokenAssetLatestDataPoint(daiKey);
+        let daiPrice = new BigNumber(latestDaiPrice.price);
+        let ethPrice = new BigNumber(latestEthPrice.price);
+
+        // calculate ETH/DAI ratio
+        const priceRatioEthDai = ethPrice.dividedBy(daiPrice);
+
+        // get collateral amount
+        const collateralAmount = this.state.tradeAmountValue;
 
         // if DAI, convert collateral to ETH
         if (this.state.collateral === 'DAI') {
-          // get required ETH amount
-          // required eth = collatera amount * ETH USD / collateral token USD
 
-          let colKey = {
-            asset: "DAI",
-            erc20Address: tokenAddresses[NETWORK_ID]['DAI'],
-            isTokenized: true,
-            leverage: this.props.leverage,
-            loanAsset: "DAI",
-            positionType: this.props.positionType,
-            unitOfAccount: "DAI",
-            version: 1
-          }
+          // get required ETH amount--ETH amount = ERC20 amount * ETH USD / ERC20 USD
+          let collateralEth = collateralAmount.multipliedBy(priceRatioEthDai)
 
-          let ethKey = {
-            asset: "ETH",
-            erc20Address: tokenAddresses[NETWORK_ID]['WETH'],
-            isTokenized: true,
-            leverage: this.props.leverage,
-            loanAsset: "DAI",
-            positionType: this.props.positionType,
-            unitOfAccount: "DAI",
-            version: 1
-          }
-          let collateralAmount = this.state.tradeAmountValue
-          let daiPrice;
-          let ethPrice;
+          // get order array for collateral
+          let makerTradeAmount = Web3Wrapper.toBaseUnitAmount(new BigNumber(collateralEth), DECIMALS);
+          collateralOrderArr = await quoter.getMarketBuySwapQuoteAsync( // we buy WETH with DAI
+            tokenAddresses[NETWORK_ID]['WETH'],
+            tokenAddresses[NETWORK_ID]['DAI'],
+            makerTradeAmount,
+          );
         }
 
-        // convert DAI margin into ETH
-        // let tradeRequest: TradeRequest = { };
-        // const exposureValue = await FulcrumProvider.Instance.getTradeFormExposure(tradeRequest);
-        let marginAmount = 0;
-        // amount of ETH margin
-        let makerMarginAmount = Web3Wrapper.toBaseUnitAmount(new BigNumber(marginAmount), DECIMALS)
-        // trade DAI margin for ETH
-        marginOrderArr = await quoter.getMarketBuySwapQuoteAsync(
-          tokenAddresses[NETWORK_ID]['WETH'],
-          tokenAddresses[NETWORK_ID]['DAI'],
-          makerMarginAmount,
-        );
-
+        // if taking out margin, trade margin in DAI to ETH
+        if (this.props.leverage > 1) {
+          //
+          let marginAmount = 0;
+          // amount of ETH margin
+          let makerMarginAmount = Web3Wrapper.toBaseUnitAmount(new BigNumber(marginAmount), DECIMALS)
+          // trade DAI margin for ETH
+          marginOrderArr = await quoter.getMarketBuySwapQuoteAsync(
+            tokenAddresses[NETWORK_ID]['WETH'],
+            tokenAddresses[NETWORK_ID]['DAI'],
+            makerMarginAmount,
+          );
+        }
 
         // if trade is ERC20 other than ETH, get orders
         if (this.props.asset != 'ETH') {
-          // amount of token we buy
+          // get order array for short or long
           let makerTradeAmount = Web3Wrapper.toBaseUnitAmount(new BigNumber(this.state.exposureValue), DECIMALS);
-          tradeOrderArr = await quoter.getMarketBuySwapQuoteAsync(
+          tradeOrderArr = await quoter.getMarketBuySwapQuoteAsync( // we buy the asset with WETH
             tokenAddresses[NETWORK_ID][this.props.asset],
             tokenAddresses[NETWORK_ID]['WETH'],
             makerTradeAmount,
